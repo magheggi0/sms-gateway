@@ -136,6 +136,26 @@ class GatewayAuthTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertIn("Troppi tentativi".encode(), res.data)
 
+    def test_modifica_ip_e_limite(self):
+        key = auth.create_key("backoffice", allowed_ips="192.168.1.7")
+        self.assertEqual(self.send_with(key, environ_base={"REMOTE_ADDR": "192.168.1.99"}).status_code, 403)
+        self.assertTrue(auth.update_key(name="backoffice", allowed_ips="192.168.1.99", max_per_hour=100))
+        self.assertEqual(self.send_with(key, environ_base={"REMOTE_ADDR": "192.168.1.99"}).status_code, 200)
+        riga = [k for k in auth.list_keys() if k["name"] == "backoffice"][0]
+        self.assertEqual((riga["allowed_ips"], riga["max_per_hour"]), ("192.168.1.99/32", 100))
+        with self.assertRaises(ValueError):
+            auth.update_key(name="backoffice", allowed_ips="non-un-ip")
+        auth.revoke_key(name="backoffice")
+        self.assertFalse(auth.update_key(name="backoffice", allowed_ips=""))
+
+    def test_modifica_dalla_dashboard(self):
+        key = auth.create_key("da-modificare", allowed_ips="10.0.0.1")
+        kid = [k for k in auth.list_keys() if k["name"] == "da-modificare"][0]["id"]
+        self.assertEqual(self.client.post(f"/api/keys/{kid}", json={"allowed_ips": ""}).status_code, 401)
+        self.client.post("/login", data={"username": "admin", "password": "password-di-prova"})
+        self.assertEqual(self.client.post(f"/api/keys/{kid}", json={"allowed_ips": "", "max_per_hour": 5}).status_code, 200)
+        self.assertEqual(self.send_with(key, environ_base={"REMOTE_ADDR": "203.0.113.9"}).status_code, 200)
+
     def test_aggiornamento_db_vecchio(self):
         conn = db()
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(sent)")}

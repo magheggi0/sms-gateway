@@ -50,7 +50,7 @@ docker exec sms-gateway python3 -c "from werkzeug.security import generate_passw
 
 ## Chiavi API
 
-Dalla dashboard (scheda **Chiavi API**) oppure da terminale:
+Dalla dashboard (scheda **Chiavi API**: crea, **Modifica** IP e limite, **Revoca**) oppure da terminale:
 
 ```sh
 # chiave per il sito, usabile solo dal server 192.168.1.20, max 20 SMS/ora
@@ -58,6 +58,9 @@ docker exec sms-gateway python3 /app/app.py keys create foldable-service --ips 1
 
 docker exec sms-gateway python3 /app/app.py keys list
 docker exec sms-gateway python3 /app/app.py keys revoke foldable-service
+
+# cambiare IP ammessi e/o limite orario di una chiave esistente
+docker exec sms-gateway python3 /app/app.py keys update foldable-service --ips 192.168.1.7 --max-per-hour 50
 ```
 
 Aggiungi `--scopes send,read` solo per chi deve leggere anche stato e storico.
