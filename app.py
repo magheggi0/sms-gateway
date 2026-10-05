@@ -397,7 +397,7 @@ def cli(argv):
                 stato = f"REVOCATA {k['revoked_at']}" if k["revoked_at"] else "attiva"
                 print(f"{k['id']:>3}  {k['name']:<20} {k['key_prefix']}...  {k['scopes']:<10} "
                       f"{k['max_per_hour']}/h  ip: {k['allowed_ips'] or 'tutti'}  "
-                      f"ultimo uso: {k['last_used_at'] or '-'}  {stato}")
+                      f"ultimo uso: {k['last_used_at'] or '-'} da {k['last_used_ip'] or '-'}  {stato}")
         elif args.action == "update":
             try:
                 if not auth.update_key(name=args.name, allowed_ips=args.ips, max_per_hour=args.max_per_hour):

@@ -187,7 +187,7 @@ def require_auth(scope):
                 if scope not in row["scopes"].split(","):
                     return jsonify({"success": False, "error": f"la chiave non ha il permesso '{scope}'"}), 403
                 if not _ip_allowed(row["allowed_ips"], request.remote_addr):
-                    return jsonify({"success": False, "error": "IP non autorizzato per questa chiave"}), 403
+                    return jsonify({"success": False, "error": f"IP non autorizzato per questa chiave (richiesta da {request.remote_addr})"}), 403
                 g.api_key = row
                 return view(*args, **kwargs)
 
