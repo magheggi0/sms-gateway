@@ -12,6 +12,8 @@ os.environ["SECRET_KEY"] = "test"
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import app as gateway  # noqa: E402
+
+REAL_SEND_SMS = gateway.send_sms
 import auth  # noqa: E402
 from storage import init_db, db  # noqa: E402
 
@@ -56,6 +58,29 @@ class GatewayAuthTest(unittest.TestCase):
         self.send.assert_called_once_with("+393331234567", "ciao")
         row = db().execute("SELECT source, api_key_id FROM sent").fetchone()
         self.assertEqual(row["source"], "foldable")
+
+    def test_testo_privato_mascherato_nello_storico(self):
+        key = auth.create_key("sito")
+        res = self.client.post("/api/send-sms", json={"number": "+393331234567", "text": "Il tuo codice è 123456", "private": True},
+                               headers={"Authorization": f"Bearer {key}"})
+        self.assertEqual(res.status_code, 200)
+        conn = gateway.db()
+        text = conn.execute("SELECT text FROM sent ORDER BY id DESC LIMIT 1").fetchone()[0]
+        conn.close()
+        self.assertEqual(text, "Il tuo codice è ••••••")
+
+    def test_sms_inviato_cancellato_dal_modem(self):
+        calls = []
+
+        def fake_run(cmd, timeout=20):
+            calls.append(cmd)
+            out = {"--send": "successfully sent the SMS"}.get(cmd[-1], "/org/freedesktop/ModemManager1/SMS/7")
+            return mock.Mock(stdout=out, stderr="")
+
+        with mock.patch.object(gateway, "get_modem_index", return_value="0"), mock.patch.object(gateway, "run", side_effect=fake_run):
+            ok, _, _, _ = REAL_SEND_SMS("+393331234567", "x")
+        self.assertTrue(ok)
+        self.assertIn(["mmcli", "-m", "0", "--messaging-delete-sms=7"], calls)
 
     def test_chiave_x_api_key(self):
         key = auth.create_key("foldable")
