@@ -171,6 +171,11 @@ def clean_text(text):
     return (text or "").strip().replace("'", "\u2019")
 
 
+def mask_digits(text):
+    """Nasconde le sequenze di 4 o più cifre (codici di accesso) nel testo salvato."""
+    return re.sub(r"\d{4,}", lambda m: "•" * len(m.group(0)), text)
+
+
 def send_sms(number, text):
     """Invia un SMS tramite il modem. Ritorna (successo, tentativi, dettaglio, errore)."""
     modem = get_modem_index()
@@ -195,12 +200,16 @@ def send_sms(number, text):
 
     max_attempts = 4
     last_detail = ""
-    for attempt in range(1, max_attempts + 1):
-        send = run(["mmcli", "-s", sms_id, "--send"], timeout=25)
-        last_detail = send.stdout + send.stderr
-        if "successfully sent" in send.stdout.lower():
-            return True, attempt, last_detail, None
-        time.sleep(3)
+    try:
+        for attempt in range(1, max_attempts + 1):
+            send = run(["mmcli", "-s", sms_id, "--send"], timeout=25)
+            last_detail = send.stdout + send.stderr
+            if "successfully sent" in send.stdout.lower():
+                return True, attempt, last_detail, None
+            time.sleep(3)
+    finally:
+        # L'SMS inviato non serve più nel modem: lo storico è nel database
+        run(["mmcli", "-m", modem, f"--messaging-delete-sms={sms_id}"])
 
     return False, max_attempts, last_detail, f"invio fallito dopo {max_attempts} tentativi"
 
@@ -258,6 +267,8 @@ def api_send_sms():
     data = request.get_json(force=True, silent=True) or {}
     number = normalize_number(data.get("number"))
     text = clean_text(data.get("text"))
+    # "private": true per i codici di accesso: nello storico le cifre vengono mascherate
+    private = data.get("private") is True
 
     if not number or not text:
         return jsonify({"success": False, "error": "number e text sono richiesti"}), 400
@@ -275,7 +286,7 @@ def api_send_sms():
             return jsonify({"success": False, "error": "limite orario di SMS raggiunto per questa chiave"}), 429
 
         success, attempts, detail, error = send_sms(number, text)
-        log_sent(number, text, success, attempts, detail, api_key_id=key_id, source=source)
+        log_sent(number, mask_digits(text) if private else text, success, attempts, detail, api_key_id=key_id, source=source)
 
     if success:
         return jsonify({"success": True, "detail": detail, "attempts": attempts}), 200

@@ -90,6 +90,11 @@ o IP non ammesso · `429` limite orario raggiunto · `500` invio fallito.
 Il numero accetta solo cifre, con `+` iniziale facoltativo; spazi, trattini e
 parentesi vengono rimossi.
 
+Con `"private": true` (es. codici di accesso) il testo viene inviato intero ma
+nello storico le sequenze di 4 o più cifre sono mascherate (`••••••`).
+Dopo l'invio l'SMS viene cancellato dalla memoria del modem: lo storico resta
+solo nel database del gateway.
+
 ## Aggiornare un gateway già in uso
 
 1. Aggiorna l'immagine e ricrea il container: il database in `/data` viene
