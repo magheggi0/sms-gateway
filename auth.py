@@ -114,6 +114,29 @@ def revoke_key(key_id=None, name=None):
     return cur.rowcount > 0
 
 
+def update_key(key_id=None, name=None, allowed_ips=None, max_per_hour=None):
+    """Cambia IP ammessi e/o limite orario di una chiave attiva."""
+    fields, values = [], []
+    if allowed_ips is not None:
+        fields.append("allowed_ips = ?")
+        values.append(parse_allowed_ips(allowed_ips))
+    if max_per_hour is not None:
+        max_per_hour = int(max_per_hour)
+        if max_per_hour < 1:
+            raise ValueError("max_per_hour deve essere almeno 1")
+        fields.append("max_per_hour = ?")
+        values.append(max_per_hour)
+    if not fields:
+        raise ValueError("niente da modificare")
+    where, ident = ("id = ?", key_id) if key_id is not None else ("name = ?", name)
+    conn = db()
+    cur = conn.execute(
+        f"UPDATE api_keys SET {', '.join(fields)} WHERE {where} AND revoked_at IS NULL", (*values, ident))
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
+
+
 def _extract_key():
     header = request.headers.get("Authorization", "")
     if header.lower().startswith("bearer "):

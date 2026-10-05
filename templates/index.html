@@ -350,6 +350,7 @@ async function loadKeys() {
   try {
     const r = await api('/api/keys');
     const rows = await r.json();
+    window._chiavi = rows;
     if (!rows.length) {
       wrap.innerHTML = '<div class="empty">Nessuna chiave: le API sono bloccate finché non ne crei una.</div>';
       return;
@@ -365,7 +366,7 @@ async function loadKeys() {
         <td class="number">${escapeHtml(k.allowed_ips || 'tutti')}</td>
         <td>${k.max_per_hour}/h</td>
         <td class="muted">${escapeHtml(k.last_used_at || '-')}${k.last_used_ip ? ' da ' + escapeHtml(k.last_used_ip) : ''}</td>
-        <td>${active ? `<button class="danger" onclick="revokeKey(${k.id}, '${escapeHtml(k.name)}')">Revoca</button>` : '<span class="muted">revocata</span>'}</td>
+        <td style="white-space:nowrap">${active ? `<button class="secondary" style="padding:6px 12px" onclick="editKey(${k.id})">Modifica</button> <button class="danger" onclick="revokeKey(${k.id}, '${escapeHtml(k.name)}')">Revoca</button>` : '<span class="muted">revocata</span>'}</td>
       </tr>`;
     }
     html += '</table>';
@@ -400,6 +401,23 @@ async function createKey() {
   } catch (e) {
     result.innerHTML = '<div class="err" style="margin-top:12px">Errore di rete.</div>';
   }
+}
+
+async function editKey(id) {
+  const k = (window._chiavi || []).find(x => x.id === id);
+  if (!k) return;
+  const ips = prompt('IP o reti ammesse per "' + k.name + '", separate da virgola (vuoto = tutti):', k.allowed_ips || '');
+  if (ips === null) return;
+  const max = prompt('SMS massimi all\'ora:', k.max_per_hour);
+  if (max === null) return;
+  const r = await api('/api/keys/' + id, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({allowed_ips: ips, max_per_hour: parseInt(max, 10)})
+  });
+  const d = await r.json();
+  if (!d.success) alert('Errore: ' + d.error);
+  loadKeys();
 }
 
 async function revokeKey(id, name) {
