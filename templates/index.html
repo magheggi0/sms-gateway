@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>SMS Gateway</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1a2436;
+    --border: #263349;
+    --text: #e5e9f0;
+    --muted: #8b96ab;
+    --accent: #38bdf8;
+    --ok: #22c55e;
+    --err: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    margin: 0;
+    padding: 24px 32px 48px;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+  code { color: var(--accent); }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  .tab {
+    padding: 10px 16px;
+    cursor: pointer;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    font-size: 0.9rem;
+    font-weight: 600;
+    user-select: none;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 { font-size: 1rem; margin: 0 0 16px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .field label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
+  .field .value { font-size: 1.1rem; font-weight: 600; }
+  .value.ok { color: var(--ok); }
+  .value.err { color: var(--err); }
+
+  input, textarea {
+    width: 100%;
+    background: #0f1626;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    margin-bottom: 12px;
+  }
+  button {
+    background: var(--accent);
+    color: #04202e;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #sendResult { margin-top: 12px; font-size: 0.9rem; }
+  .ok { color: var(--ok); }
+  .err { color: var(--err); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
+  td.number { font-family: monospace; }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .status-dot.ok { background: var(--ok); }
+  .status-dot.err { background: var(--err); }
+  .empty { color: var(--muted); font-size: 0.9rem; padding: 12px 0; }
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  .newkey { background: #0f1626; border: 1px solid var(--accent); border-radius: 8px; padding: 12px; margin-top: 12px; word-break: break-all; }
+  .newkey code { font-size: 0.95rem; }
+  .row { display: grid; grid-template-columns: 2fr 1fr 2fr 1fr auto; gap: 8px; align-items: start; }
+  .row input, .row select { margin-bottom: 0; }
+  select { background: #0f1626; border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 12px; font-size: 0.95rem; width: 100%; }
+  .muted { color: var(--muted); }
+  button.danger { background: transparent; border: 1px solid var(--err); color: var(--err); padding: 6px 12px; }
+  @media (max-width: 800px) { .row, .grid { grid-template-columns: 1fr; } body { padding: 16px; } }
+</style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h1>📡 SMS Gateway</h1>
+      <div class="sub">Dispositivo: <code>{{ device }}</code></div>
+    </div>
+    <form method="post" action="/logout"><button class="secondary" type="submit">Esci</button></form>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="status">Stato</div>
+    <div class="tab" data-tab="send">Invia</div>
+    <div class="tab" data-tab="sent">Storico invii</div>
+    <div class="tab" data-tab="received">Ricevuti</div>
+    <div class="tab" data-tab="keys">Chiavi API</div>
+  </div>
+
+  <div class="panel active" id="panel-status">
+    <div class="card">
+      <h2>Stato modem</h2>
+      <div class="grid">
+        <div class="field"><label>Segnale</label><div class="value" id="signal">&hellip;</div></div>
+        <div class="field"><label>Rete</label><div class="value" id="registration">&hellip;</div></div>
+        <div class="field"><label>Operatore</label><div class="value" id="operator">&hellip;</div></div>
+        <div class="field"><label>Tecnologia</label><div class="value" id="accessTech">&hellip;</div></div>
+        <div class="field"><label>Stato modem</label><div class="value" id="state">&hellip;</div></div>
+        <div class="field"><label>Lock SIM</label><div class="value" id="lock">&hellip;</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-send">
+    <div class="card">
+      <h2>Invia SMS di test</h2>
+      <input id="number" placeholder="Numero, es. +39328XXXXXXX">
+      <textarea id="text" rows="3" placeholder="Testo del messaggio"></textarea>
+      <button id="sendBtn" onclick="sendSms()">Invia</button>
+      <div id="sendResult"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-sent">
+    <div class="card">
+      <div class="toolbar">
+        <h2 style="margin:0">Storico invii</h2>
+        <button class="secondary" onclick="loadSent()">Aggiorna</button>
+      </div>
+      <div id="sentTableWrap"><div class="empty">Caricamento...</div></div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-received">
+    <div class="card">
+      <div class="toolbar">
+        <h2 style="margin:0">SMS ricevuti</h2>
+        <button class="secondary" onclick="loadReceived()">Aggiorna</button>
+      </div>
+      <div id="receivedTableWrap"><div class="empty">Caricamento...</div></div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-keys">
+    <div class="card">
+      <h2>Nuova chiave</h2>
+      <div class="row">
+        <input id="keyName" placeholder="Nome, es. foldable-service">
+        <select id="keyScopes">
+          <option value="send">Solo invio</option>
+          <option value="send,read">Invio + lettura</option>
+          <option value="read">Solo lettura</option>
+        </select>
+        <input id="keyIps" placeholder="IP ammessi (vuoto = tutti), es. 192.168.1.20">
+        <input id="keyMax" type="number" min="1" value="30" title="SMS massimi all'ora">
+        <button onclick="createKey()">Crea</button>
+      </div>
+      <div class="sub" style="margin:8px 0 0">Il numero è il limite di SMS all'ora. La chiave viene mostrata una sola volta.</div>
+      <div id="keyResult"></div>
+    </div>
+    <div class="card">
+      <div class="toolbar">
+        <h2 style="margin:0">Chiavi</h2>
+        <button class="secondary" onclick="loadKeys()">Aggiorna</button>
+      </div>
+      <div id="keysTableWrap"><div class="empty">Caricamento...</div></div>
+    </div>
+  </div>
+
+<script>
+// Sessione scaduta: torna al login
+async function api(url, options) {
+  const r = await fetch(url, options);
+  if (r.status === 401) {
+    window.location.href = '/login';
+    throw new Error('sessione scaduta');
+  }
+  return r;
+}
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'sent') loadSent();
+    if (tab.dataset.tab === 'received') loadReceived();
+    if (tab.dataset.tab === 'keys') loadKeys();
+  });
+});
+
+async function refreshStatus() {
+  try {
+    const r = await api('/api/status');
+    const d = await r.json();
+
+    if (!d.modem_found) {
+      ['signal','registration','operator','accessTech','state','lock'].forEach(id => {
+        const el = document.getElementById(id);
+        el.textContent = 'Modem non rilevato';
+        el.className = 'value err';
+      });
+      return;
+    }
+
+    const signalEl = document.getElementById('signal');
+    signalEl.textContent = d.signal !== null && d.signal !== undefined ? d.signal + '%' : 'N/A';
+    signalEl.className = 'value';
+    if (d.signal !== null && d.signal !== undefined) {
+      const s = parseInt(d.signal, 10);
+      signalEl.className = 'value ' + (s >= 40 ? 'ok' : (s >= 15 ? '' : 'err'));
+    }
+
+    document.getElementById('registration').textContent = d.registration || 'N/A';
+    document.getElementById('operator').textContent = d.operator || 'N/A';
+    document.getElementById('accessTech').textContent = d.access_tech || 'N/A';
+
+    const stateEl = document.getElementById('state');
+    stateEl.textContent = d.state || 'N/A';
+    stateEl.className = 'value ' + (d.state === 'registered' || d.state === 'connected' ? 'ok' : '');
+
+    document.getElementById('lock').textContent = d.lock || 'nessuno';
+  } catch (e) {
+    document.getElementById('signal').textContent = 'errore';
+  }
+}
+
+async function sendSms() {
+  const btn = document.getElementById('sendBtn');
+  const result = document.getElementById('sendResult');
+  const number = document.getElementById('number').value;
+  const text = document.getElementById('text').value;
+
+  btn.disabled = true;
+  result.textContent = 'Invio in corso...';
+  result.className = '';
+
+  try {
+    const r = await api('/api/send-sms', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({number, text})
+    });
+    const d = await r.json();
+    result.textContent = d.success
+      ? ('SMS inviato correttamente (tentativo ' + d.attempts + ').')
+      : ('Errore: ' + (d.error || d.detail));
+    result.className = d.success ? 'ok' : 'err';
+  } catch (e) {
+    result.textContent = 'Errore di rete: ' + e;
+    result.className = 'err';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+async function loadSent() {
+  const wrap = document.getElementById('sentTableWrap');
+  wrap.innerHTML = '<div class="empty">Caricamento...</div>';
+  try {
+    const r = await api('/api/history/sent');
+    const rows = await r.json();
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="empty">Nessun invio registrato.</div>';
+      return;
+    }
+    let html = '<table><tr><th></th><th>Numero</th><th>Testo</th><th>Origine</th><th>Tentativi</th><th>Data</th></tr>';
+    for (const row of rows) {
+      html += `<tr>
+        <td><span class="status-dot ${row.success ? 'ok' : 'err'}"></span></td>
+        <td class="number">${escapeHtml(row.number)}</td>
+        <td>${escapeHtml(row.text)}</td>
+        <td class="muted">${escapeHtml(row.source || '-')}</td>
+        <td>${row.attempts ?? '-'}</td>
+        <td>${escapeHtml(row.created_at)}</td>
+      </tr>`;
+    }
+    html += '</table>';
+    wrap.innerHTML = html;
+  } catch (e) {
+    wrap.innerHTML = '<div class="empty err">Errore nel caricamento.</div>';
+  }
+}
+
+async function loadReceived() {
+  const wrap = document.getElementById('receivedTableWrap');
+  wrap.innerHTML = '<div class="empty">Caricamento...</div>';
+  try {
+    const r = await api('/api/history/received');
+    const rows = await r.json();
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="empty">Nessun SMS ricevuto.</div>';
+      return;
+    }
+    let html = '<table><tr><th>Da</th><th>Testo</th><th>Data SMS</th></tr>';
+    for (const row of rows) {
+      html += `<tr>
+        <td class="number">${escapeHtml(row.number)}</td>
+        <td>${escapeHtml(row.text)}</td>
+        <td>${escapeHtml(row.sms_timestamp || row.imported_at)}</td>
+      </tr>`;
+    }
+    html += '</table>';
+    wrap.innerHTML = html;
+  } catch (e) {
+    wrap.innerHTML = '<div class="empty err">Errore nel caricamento.</div>';
+  }
+}
+
+async function loadKeys() {
+  const wrap = document.getElementById('keysTableWrap');
+  wrap.innerHTML = '<div class="empty">Caricamento...</div>';
+  try {
+    const r = await api('/api/keys');
+    const rows = await r.json();
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="empty">Nessuna chiave: le API sono bloccate finché non ne crei una.</div>';
+      return;
+    }
+    let html = '<table><tr><th></th><th>Nome</th><th>Chiave</th><th>Permessi</th><th>IP ammessi</th><th>Limite</th><th>Ultimo uso</th><th></th></tr>';
+    for (const k of rows) {
+      const active = !k.revoked_at;
+      html += `<tr>
+        <td><span class="status-dot ${active ? 'ok' : 'err'}"></span></td>
+        <td>${escapeHtml(k.name)}</td>
+        <td class="number">${escapeHtml(k.key_prefix)}…</td>
+        <td>${escapeHtml(k.scopes)}</td>
+        <td class="number">${escapeHtml(k.allowed_ips || 'tutti')}</td>
+        <td>${k.max_per_hour}/h</td>
+        <td class="muted">${escapeHtml(k.last_used_at || '-')}${k.last_used_ip ? ' da ' + escapeHtml(k.last_used_ip) : ''}</td>
+        <td>${active ? `<button class="danger" onclick="revokeKey(${k.id}, '${escapeHtml(k.name)}')">Revoca</button>` : '<span class="muted">revocata</span>'}</td>
+      </tr>`;
+    }
+    html += '</table>';
+    wrap.innerHTML = html;
+  } catch (e) {
+    wrap.innerHTML = '<div class="empty err">Errore nel caricamento.</div>';
+  }
+}
+
+async function createKey() {
+  const result = document.getElementById('keyResult');
+  result.innerHTML = '';
+  try {
+    const r = await api('/api/keys', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name: document.getElementById('keyName').value,
+        scopes: document.getElementById('keyScopes').value,
+        allowed_ips: document.getElementById('keyIps').value,
+        max_per_hour: parseInt(document.getElementById('keyMax').value, 10) || 30
+      })
+    });
+    const d = await r.json();
+    if (!d.success) {
+      result.innerHTML = '<div class="err" style="margin-top:12px">Errore: ' + escapeHtml(d.error) + '</div>';
+      return;
+    }
+    result.innerHTML = '<div class="newkey">Copia ora la chiave, non verrà più mostrata:<br><code>' + escapeHtml(d.key) + '</code></div>';
+    document.getElementById('keyName').value = '';
+    loadKeys();
+  } catch (e) {
+    result.innerHTML = '<div class="err" style="margin-top:12px">Errore di rete.</div>';
+  }
+}
+
+async function revokeKey(id, name) {
+  if (!confirm('Revocare la chiave "' + name + '"? I programmi che la usano smetteranno di inviare SMS.')) return;
+  await api('/api/keys/' + id + '/revoke', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: '{}'
+  });
+  loadKeys();
+}
+
+refreshStatus();
+setInterval(refreshStatus, 8000);
+</script>
+
+</body>
+</html>
