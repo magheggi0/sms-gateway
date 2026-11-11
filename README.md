@@ -105,6 +105,7 @@ invia più nulla (`MemoryFull`). Il gateway la tiene vuota da solo, come i disch
   da invii interrotti (mai durante un invio);
 - l'SMS inviato si cancella subito dal modem;
 - se un invio trova la memoria piena, il gateway la svuota (salvando prima i ricevuti) e riprova subito;
+- dalla dashboard (Stato modem) si vede quanti SMS ci sono nel modem e c'è il pulsante «Svuota la memoria del modem»;
 - lo storico nel database resta entro `HISTORY_MAX` righe: oltre si cancellano le più vecchie.
 
 Nei log del container: `[sms] memoria del modem: N SMS cancellati`.

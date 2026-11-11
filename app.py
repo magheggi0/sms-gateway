@@ -181,6 +181,7 @@ def get_status():
         "operator": fields.get("operator name"),
         "access_tech": fields.get("access tech"),
         "lock": fields.get("lock"),
+        "sms_on_modem": len(list_modem_sms(modem)),
     }
 
 
@@ -319,6 +320,19 @@ def api_send_sms():
     if success:
         return jsonify({"success": True, "detail": detail, "attempts": attempts}), 200
     return jsonify({"success": False, "error": error, "detail": detail}), 500
+
+
+@app.route("/api/modem/purge", methods=["POST"])
+@auth.require_admin
+def api_modem_purge():
+    """Dashboard: svuota la memoria del modem (ricevuti salvati prima nello storico)."""
+    modem = get_modem_index()
+    if modem is None:
+        return jsonify({"success": False, "error": "nessun modem trovato"}), 503
+    with send_lock:
+        deleted = purge_modem_storage(modem)
+        left = len(list_modem_sms(modem))
+    return jsonify({"success": True, "deleted": deleted, "left": left})
 
 
 @app.route("/api/history/sent", methods=["GET"])

@@ -84,6 +84,17 @@ class ModemMemoryTest(unittest.TestCase):
         conn.close()
         self.assertEqual(nums, ["333002", "333003", "333004"])
 
+    def test_pulsante_dashboard(self):
+        client = gateway.app.test_client()
+        self.assertEqual(client.post("/api/modem/purge", json={}).status_code, 401)
+        with client.session_transaction() as sess:
+            sess["admin"] = True
+        sms = {"4": "  | pdu type: submit\n  | state: sent"}
+        run, _ = self.fake_modem(sms)
+        with mock.patch.object(gateway, "get_modem_index", return_value="0"), mock.patch.object(gateway, "run", side_effect=run):
+            res = client.post("/api/modem/purge", json={})
+        self.assertEqual(res.get_json(), {"success": True, "deleted": 1, "left": 0})
+
 
 if __name__ == "__main__":
     unittest.main()

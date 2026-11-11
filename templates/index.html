@@ -137,7 +137,12 @@
         <div class="field"><label>Tecnologia</label><div class="value" id="accessTech">&hellip;</div></div>
         <div class="field"><label>Stato modem</label><div class="value" id="state">&hellip;</div></div>
         <div class="field"><label>Lock SIM</label><div class="value" id="lock">&hellip;</div></div>
+        <div class="field"><label>SMS nella memoria del modem</label><div class="value" id="smsOnModem">&hellip;</div></div>
       </div>
+      <p style="margin-top:14px"><button class="secondary" id="purgeBtn" onclick="purgeModem()">Svuota la memoria del modem</button>
+        <span id="purgeResult"></span></p>
+      <p class="muted" style="margin:6px 0 0">Con la memoria piena («MemoryFull») il modem non invia più SMS. Gli SMS ricevuti si salvano prima nello storico.
+        Il gateway la svuota anche da solo ogni 20 secondi.</p>
     </div>
   </div>
 
@@ -251,9 +256,23 @@ async function refreshStatus() {
     stateEl.className = 'value ' + (d.state === 'registered' || d.state === 'connected' ? 'ok' : '');
 
     document.getElementById('lock').textContent = d.lock || 'nessuno';
+    document.getElementById('smsOnModem').textContent = d.sms_on_modem === undefined ? 'N/A' : d.sms_on_modem;
   } catch (e) {
     document.getElementById('signal').textContent = 'errore';
   }
+}
+
+async function purgeModem() {
+  const btn = document.getElementById('purgeBtn'), out = document.getElementById('purgeResult');
+  btn.disabled = true; out.textContent = ' Svuoto...'; out.className = '';
+  try {
+    const r = await api('/api/modem/purge', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+    const d = await r.json();
+    out.textContent = d.success ? (' Cancellati ' + d.deleted + ' SMS, ne restano ' + d.left + '.') : (' Errore: ' + d.error);
+    out.className = d.success ? 'ok' : 'err';
+  } catch (e) { out.textContent = ' Errore: ' + e.message; out.className = 'err'; }
+  btn.disabled = false;
+  refreshStatus();
 }
 
 async function sendSms() {
