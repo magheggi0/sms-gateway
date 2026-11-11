@@ -98,27 +98,50 @@ def parse_sms_detail(text):
     return fields
 
 
+def list_modem_sms(modem):
+    listing = run(["mmcli", "-m", modem, "--messaging-list-sms"], timeout=20).stdout
+    return [m.group(1) for m in re.finditer(r"(/org/freedesktop/ModemManager1/SMS/\d+)", listing)]
+
+
+def purge_modem_storage(modem, keep_id=None):
+    """Svuota la memoria del modem (ModemManager la riempie con gli SMS ricevuti e
+    con quelli rimasti da invii interrotti: piena, nessun SMS parte piu',
+    «MemoryFull»). Gli SMS ricevuti si salvano nel database prima di cancellarli;
+    keep_id: l'SMS in uscita da non toccare. Ritorna quanti ne ha cancellati."""
+    deleted = 0
+    for path in list_modem_sms(modem):
+        sms_id = path.rsplit("/", 1)[-1]
+        if keep_id is not None and sms_id == str(keep_id):
+            continue
+        fields = parse_sms_detail(run(["mmcli", "-s", sms_id], timeout=15).stdout)
+        pdu_type = fields.get("pdu type", "").lower()
+        state = fields.get("state", "").lower()
+        if "deliver" in pdu_type or state in ("received", "receiving"):
+            if state == "receiving":
+                continue  # SMS in arrivo (in piu' parti): si salva al giro dopo
+            if not save_received(path, fields.get("number", ""), fields.get("text", ""), fields.get("timestamp", "")):
+                continue  # non salvato nel database: resta sul modem
+        res = run(["mmcli", "-m", modem, f"--messaging-delete-sms={sms_id}"])
+        if "successfully" in ((res.stdout or "") + (res.stderr or "")).lower():
+            deleted += 1
+    return deleted
+
+
 def poll_received_sms():
+    """Ogni 20 secondi: SMS ricevuti salvati nel database e cancellati dal modem,
+    con quelli rimasti da invii interrotti (mai durante un invio)."""
     while True:
         try:
             modem = get_modem_index()
-            if modem:
-                listing = run(["mmcli", "-m", modem, "--messaging-list-sms"], timeout=20).stdout
-                for sms_path_match in re.finditer(r"(/org/freedesktop/ModemManager1/SMS/\d+)", listing):
-                    path = sms_path_match.group(1)
-                    sms_id = path.rsplit("/", 1)[-1]
-                    detail_out = run(["mmcli", "-s", sms_id], timeout=15).stdout
-                    fields = parse_sms_detail(detail_out)
-
-                    pdu_type = fields.get("pdu type", "")
-                    state = fields.get("state", "")
-                    if "deliver" in pdu_type.lower() or state.lower() == "received":
-                        number = fields.get("number", "")
-                        text_val = fields.get("text", "")
-                        ts = fields.get("timestamp", "")
-                        save_received(path, number, text_val, ts)
-        except Exception:
-            pass
+            if modem and send_lock.acquire(blocking=False):
+                try:
+                    n = purge_modem_storage(modem)
+                    if n:
+                        print(f"[sms] memoria del modem: {n} SMS cancellati", flush=True)
+                finally:
+                    send_lock.release()
+        except Exception as exc:
+            print(f"[sms] pulizia della memoria del modem non riuscita: {exc}", flush=True)
         time.sleep(20)
 
 
@@ -206,6 +229,11 @@ def send_sms(number, text):
             last_detail = send.stdout + send.stderr
             if "successfully sent" in send.stdout.lower():
                 return True, attempt, last_detail, None
+            # Memoria del modem piena: si svuota (ricevuti salvati nel database) e si riprova subito
+            if "memoryfull" in last_detail.lower().replace(" ", ""):
+                n = purge_modem_storage(modem, keep_id=sms_id)
+                print(f"[sms] memoria del modem piena: {n} SMS cancellati, riprovo", flush=True)
+                continue
             time.sleep(3)
     finally:
         # L'SMS inviato non serve più nel modem: lo storico è nel database

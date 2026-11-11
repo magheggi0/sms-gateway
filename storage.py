@@ -2,6 +2,8 @@ import os
 import sqlite3
 
 DB_PATH = os.environ.get("DB_PATH", "/data/sms-gateway.db")
+# Storico a giro, come i dischi della videosorveglianza: oltre il limite si cancellano i piu' vecchi
+HISTORY_MAX = int(os.environ.get("HISTORY_MAX", "20000"))
 
 
 def db():
@@ -9,6 +11,11 @@ def db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _rotate(conn, table):
+    if HISTORY_MAX > 0:
+        conn.execute(f"DELETE FROM {table} WHERE id <= (SELECT MAX(id) FROM {table}) - ?", (HISTORY_MAX,))
 
 
 def _columns(conn, table):
@@ -71,6 +78,7 @@ def log_sent(number, text, success, attempts, detail, api_key_id=None, source=No
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (number, text, 1 if success else 0, attempts, detail, api_key_id, source),
     )
+    _rotate(conn, "sent")
     conn.commit()
     conn.close()
 
@@ -87,13 +95,22 @@ def count_sent_last_hour(api_key_id):
 
 
 def save_received(path, number, text, sms_timestamp):
+    """Salva un SMS ricevuto. Ritorna True se e' nel database (anche se c'era gia'),
+    cosi' si puo' cancellare dal modem. ModemManager riusa i percorsi /SMS/N dopo
+    un riavvio: la chiave unica comprende anche data e mittente."""
+    key = f"{path}|{sms_timestamp}|{number}"
     conn = db()
     try:
         conn.execute(
             "INSERT INTO received (modem_sms_path, number, text, sms_timestamp) VALUES (?, ?, ?, ?)",
-            (path, number, text, sms_timestamp),
+            (key, number, text, sms_timestamp),
         )
+        _rotate(conn, "received")
         conn.commit()
+        return True
     except sqlite3.IntegrityError:
-        pass
-    conn.close()
+        return True
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()

@@ -41,6 +41,7 @@ docker run -d --name sms-gateway --restart unless-stopped \
 | `TRUST_PROXY_HOPS`      | `0`         | Numero di reverse proxy davanti al gateway (per avere l'IP reale) |
 | `MAX_TEXT_LENGTH`       | `640`       | Lunghezza massima del testo                                      |
 | `PORT`                  | `5000`      | Porta HTTP                                                       |
+| `HISTORY_MAX`           | `20000`     | Righe massime di storico inviati e ricevuti (poi si cancellano le più vecchie; 0 = nessun limite) |
 
 Per non scrivere la password in chiaro:
 
@@ -94,6 +95,19 @@ Con `"private": true` (es. codici di accesso) il testo viene inviato intero ma
 nello storico le sequenze di 4 o più cifre sono mascherate (`••••••`).
 Dopo l'invio l'SMS viene cancellato dalla memoria del modem: lo storico resta
 solo nel database del gateway.
+
+## Memoria del modem
+
+Il modem conserva gli SMS (ricevuti e rimasti da invii interrotti) in una memoria piccola: quando è piena non
+invia più nulla (`MemoryFull`). Il gateway la tiene vuota da solo, come i dischi della videosorveglianza:
+
+- ogni 20 secondi gli SMS ricevuti si salvano nello storico e si cancellano dal modem, insieme a quelli rimasti
+  da invii interrotti (mai durante un invio);
+- l'SMS inviato si cancella subito dal modem;
+- se un invio trova la memoria piena, il gateway la svuota (salvando prima i ricevuti) e riprova subito;
+- lo storico nel database resta entro `HISTORY_MAX` righe: oltre si cancellano le più vecchie.
+
+Nei log del container: `[sms] memoria del modem: N SMS cancellati`.
 
 ## Aggiornare un gateway già in uso
 
