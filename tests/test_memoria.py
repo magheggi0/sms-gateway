@@ -82,7 +82,8 @@ class ModemMemoryTest(unittest.TestCase):
         conn = storage.db()
         nums = [r["number"] for r in conn.execute("SELECT number FROM sent ORDER BY id")]
         conn.close()
-        self.assertEqual(nums, ["333002", "333003", "333004"])
+        # numeri mascherati: restano le ultime tre cifre
+        self.assertEqual(nums, ["•••002", "•••003", "•••004"])
 
     def test_pulsante_dashboard(self):
         client = gateway.app.test_client()

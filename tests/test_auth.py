@@ -41,6 +41,36 @@ class GatewayAuthTest(unittest.TestCase):
         return self.client.post("/api/send-sms", json={"number": number, "text": text},
                                 headers={"Authorization": f"Bearer {key}"}, **kw)
 
+    def test_risposte_alla_chiave_che_ha_scritto(self):
+        from storage import save_received
+        conn = db()
+        conn.execute("DELETE FROM received")
+        conn.execute("DELETE FROM last_sender")
+        conn.commit()
+        conn.close()
+        ges = auth.create_key("gestionale", scopes="send,read")
+        fold = auth.create_key("foldable", scopes="send,read")
+        self.assertEqual(self.send_with(ges, number="+393331111111").status_code, 200)
+        self.assertEqual(self.send_with(fold, number="3332222222").status_code, 200)
+        save_received("/SMS/1", "+393331111111", "risposta al gestionale", "t1")
+        save_received("/SMS/2", "+393332222222", "risposta a foldable", "t2")
+        save_received("/SMS/3", "+393330000000", "numero sconosciuto", "t3")
+        with mock.patch.object(gateway, "INBOX_DEFAULT_KEYS", {"gestionale"}):
+            g = self.client.get("/api/history/received", headers={"Authorization": f"Bearer {ges}"}).get_json()
+            f = self.client.get("/api/history/received", headers={"Authorization": f"Bearer {fold}"}).get_json()
+            self.assertEqual([x["text"] for x in g], ["risposta al gestionale", "numero sconosciuto"])
+            self.assertEqual([x["text"] for x in f], ["risposta a foldable"])
+            # foldable non puo' confermare (cancellare) quelle del gestionale
+            r = self.client.post("/api/history/received/ack", json={"ids": [x["id"] for x in g]}, headers={"Authorization": f"Bearer {fold}"})
+            self.assertEqual(r.get_json()["deleted"], 0)
+            r = self.client.post("/api/history/received/ack", json={"ids": [x["id"] for x in f]}, headers={"Authorization": f"Bearer {fold}"})
+            self.assertEqual(r.get_json()["deleted"], 1)
+            left = self.client.get("/api/history/received", headers={"Authorization": f"Bearer {ges}"}).get_json()
+            self.assertEqual(len(left), 2)
+        # chiave solo di invio: niente lettura
+        solo = auth.create_key("solo-invio", scopes="send")
+        self.assertEqual(self.client.get("/api/history/received", headers={"Authorization": f"Bearer {solo}"}).status_code, 403)
+
     def test_senza_credenziali_tutto_bloccato(self):
         self.assertEqual(self.client.post("/api/send-sms", json={"number": "+393331234567", "text": "x"}).status_code, 401)
         for url in ("/api/status", "/api/history/sent", "/api/history/received", "/api/keys"):
@@ -59,7 +89,7 @@ class GatewayAuthTest(unittest.TestCase):
         row = db().execute("SELECT source, api_key_id FROM sent").fetchone()
         self.assertEqual(row["source"], "foldable")
 
-    def test_testo_privato_mascherato_nello_storico(self):
+    def test_testo_mai_nello_storico(self):
         key = auth.create_key("sito")
         res = self.client.post("/api/send-sms", json={"number": "+393331234567", "text": "Il tuo codice è 123456", "private": True},
                                headers={"Authorization": f"Bearer {key}"})
@@ -67,7 +97,8 @@ class GatewayAuthTest(unittest.TestCase):
         conn = gateway.db()
         text = conn.execute("SELECT text FROM sent ORDER BY id DESC LIMIT 1").fetchone()[0]
         conn.close()
-        self.assertEqual(text, "Il tuo codice è ••••••")
+        # Nessuno storico dei testi: dell'invio restano esito, data e numero mascherato
+        self.assertEqual(text, "")
 
     def test_sms_inviato_cancellato_dal_modem(self):
         calls = []

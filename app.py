@@ -10,7 +10,7 @@ import os
 import threading
 
 import auth
-from storage import DB_PATH, init_db, log_sent, save_received, count_sent_last_hour, db
+from storage import DB_PATH, init_db, log_sent, save_received, count_sent_last_hour, db, received_for, ack_received, prune
 
 app = Flask(__name__)
 app.config.update(
@@ -142,6 +142,10 @@ def poll_received_sms():
                     send_lock.release()
         except Exception as exc:
             print(f"[sms] pulizia della memoria del modem non riuscita: {exc}", flush=True)
+        try:
+            prune()  # ricevuti mai confermati e destinatari ricordati oltre i giorni previsti
+        except Exception as exc:
+            print(f"[sms] pulizia dei ricevuti non riuscita: {exc}", flush=True)
         time.sleep(20)
 
 
@@ -315,7 +319,8 @@ def api_send_sms():
             return jsonify({"success": False, "error": "limite orario di SMS raggiunto per questa chiave"}), 429
 
         success, attempts, detail, error = send_sms(number, text)
-        log_sent(number, mask_digits(text) if private else text, success, attempts, detail, api_key_id=key_id, source=source)
+        # Testo mai conservato (anche quello non privato): restano esito, data e numero mascherato
+        log_sent(number, "", success, attempts, detail, api_key_id=key_id, source=source)
 
     if success:
         return jsonify({"success": True, "detail": detail, "attempts": attempts}), 200
@@ -349,18 +354,38 @@ def api_history_sent():
     return jsonify([dict(r) for r in rows])
 
 
+# Chiavi che ricevono anche le risposte dei numeri a cui nessuna chiave ha scritto (nomi separati da virgola)
+INBOX_DEFAULT_KEYS = {n.strip() for n in os.environ.get("INBOX_DEFAULT_KEYS", "").split(",") if n.strip()}
+
+
+def _inbox_caller():
+    key = g.api_key
+    if not key:
+        return None, False
+    return key["id"], key["name"] in INBOX_DEFAULT_KEYS
+
+
 @app.route("/api/history/received", methods=["GET"])
 @auth.require_auth("read")
 def api_history_received():
+    """Risposte ricevute: a ogni chiave solo quelle dei numeri a cui ha scritto per ultima (piu' quelle dei numeri
+    sconosciuti per le chiavi in INBOX_DEFAULT_KEYS); la dashboard le vede tutte. Restano finche' non si confermano."""
     limit = min(request.args.get("limit", 50, type=int) or 50, 200)
-    conn = db()
-    rows = conn.execute(
-        "SELECT id, number, text, sms_timestamp, imported_at "
-        "FROM received ORDER BY id DESC LIMIT ?",
-        (limit,),
-    ).fetchall()
-    conn.close()
-    return jsonify([dict(r) for r in rows])
+    key_id, default_inbox = _inbox_caller()
+    rows = received_for(key_id, default_inbox, limit=limit)
+    if key_id is None:
+        rows = list(reversed(rows))
+    return jsonify(rows)
+
+
+@app.route("/api/history/received/ack", methods=["POST"])
+@auth.require_auth("read")
+def api_history_received_ack():
+    """Conferma delle risposte lette: si cancellano dal gateway (nessuno storico)."""
+    data = request.get_json(force=True, silent=True) or {}
+    ids = data.get("ids") if isinstance(data.get("ids"), list) else []
+    key_id, default_inbox = _inbox_caller()
+    return jsonify({"success": True, "deleted": ack_received(ids[:500], key_id, default_inbox)})
 
 
 # --- gestione chiavi (solo dashboard) ---------------------------------------

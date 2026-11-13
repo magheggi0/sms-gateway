@@ -41,6 +41,9 @@ docker run -d --name sms-gateway --restart unless-stopped \
 | `TRUST_PROXY_HOPS`      | `0`         | Numero di reverse proxy davanti al gateway (per avere l'IP reale) |
 | `MAX_TEXT_LENGTH`       | `640`       | Lunghezza massima del testo                                      |
 | `PORT`                  | `5000`      | Porta HTTP                                                       |
+| `RECEIVED_MAX_DAYS`     | `14`        | Risposte mai confermate cancellate dopo questi giorni |
+| `LAST_SENDER_DAYS`      | `60`        | Per quanti giorni si ricorda quale chiave ha scritto a un numero (per consegnarle le risposte) |
+| `INBOX_DEFAULT_KEYS`    | (vuoto)     | Nomi delle chiavi (separati da virgola) che ricevono anche le risposte dei numeri a cui non ha scritto nessuno (es. `gestionale`) |
 | `HISTORY_MAX`           | `20000`     | Righe massime di storico inviati e ricevuti (poi si cancellano le più vecchie; 0 = nessun limite) |
 
 Per non scrivere la password in chiaro:
@@ -82,7 +85,8 @@ curl -X POST http://192.168.1.10:5000/api/send-sms \
 | `POST /api/send-sms`        | `send`   | `200 {"success": true, "attempts": n}` |
 | `GET /api/status`           | `read`   | Stato del modem                        |
 | `GET /api/history/sent`     | `read`   | Ultimi invii (`?limit=`, max 200)      |
-| `GET /api/history/received` | `read`   | Ultimi SMS ricevuti                    |
+| `GET /api/history/received` | `read`   | Risposte da leggere: solo quelle dei numeri a cui questa chiave ha scritto per ultima (vedi sotto) |
+| `POST /api/history/received/ack` | `read` | Conferma `{"ids": [...]}`: le risposte lette si cancellano dal gateway |
 | `GET /health`               | nessuno  | `{"status": "ok"}`                     |
 
 Errori: `400` dati non validi · `401` chiave mancante o errata · `403` permesso
@@ -126,3 +130,15 @@ Nei log del container: `[sms] memoria del modem: N SMS cancellati`.
 pip install flask waitress
 python3 -m unittest discover -s tests
 ```
+
+
+## Risposte dei clienti e storico (novembre 2026)
+
+- **Nessun testo nello storico degli invii**: restano esito, data, chiave e numero mascherato (ultime tre cifre), che
+  servono al limite orario e alla diagnosi. L'esito di ogni invio lo registra l'applicazione che lo chiede.
+- **Risposte a chi ha scritto**: a ogni invio riuscito il gateway ricorda (senza testo) quale chiave ha scritto a quel
+  numero. `GET /api/history/received` dà a ogni chiave solo le risposte di quei numeri; le risposte dei numeri a cui non
+  ha scritto nessuno vanno alle chiavi in `INBOX_DEFAULT_KEYS`. La dashboard le vede tutte.
+- **Conferma**: l'applicazione salva le risposte nel suo database e chiama `POST /api/history/received/ack` con gli id:
+  il gateway le cancella (può confermare solo le sue). Quelle mai confermate si cancellano dopo `RECEIVED_MAX_DAYS`.
+- Chi legge le risposte ha bisogno di una chiave con il permesso `read` (oltre a `send`).

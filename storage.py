@@ -4,6 +4,27 @@ import sqlite3
 DB_PATH = os.environ.get("DB_PATH", "/data/sms-gateway.db")
 # Storico a giro, come i dischi della videosorveglianza: oltre il limite si cancellano i piu' vecchi
 HISTORY_MAX = int(os.environ.get("HISTORY_MAX", "20000"))
+# Nessuno storico dei testi: degli invii restano solo esito, data e numero mascherato (servono al limite orario delle
+# chiavi e alla diagnosi). Gli SMS ricevuti restano finche' l'applicazione che li legge non li conferma, al massimo
+# RECEIVED_MAX_DAYS giorni. Per consegnare ogni risposta a chi ha scritto si ricorda quale chiave ha mandato l'ultimo SMS
+# a ogni numero (senza testo), per LAST_SENDER_DAYS giorni.
+RECEIVED_MAX_DAYS = int(os.environ.get("RECEIVED_MAX_DAYS", "14"))
+LAST_SENDER_DAYS = int(os.environ.get("LAST_SENDER_DAYS", "60"))
+
+
+def number_key(number):
+    """Stesso numero scritto in modi diversi (+39, 0039, spazi): solo cifre, senza il prefisso italiano."""
+    d = "".join(ch for ch in str(number or "") if ch.isdigit())
+    if d.startswith("00"):
+        d = d[2:]
+    if len(d) == 12 and d.startswith("39"):
+        d = d[2:]
+    return d
+
+
+def mask_number(number):
+    d = str(number or "")
+    return ("•" * max(0, len(d) - 3)) + d[-3:] if len(d) > 3 else d
 
 
 def db():
@@ -62,6 +83,14 @@ def init_db():
             revoked_at TEXT
         )
     """)
+    # Ultima chiave che ha scritto a un numero: a lei vanno le risposte di quel numero
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS last_sender (
+            number_key TEXT PRIMARY KEY,
+            api_key_id INTEGER NOT NULL,
+            at TEXT DEFAULT (datetime('now', 'localtime'))
+        )
+    """)
     # Database creati con la versione precedente: aggiunge chi ha inviato
     if "api_key_id" not in _columns(conn, "sent"):
         conn.execute("ALTER TABLE sent ADD COLUMN api_key_id INTEGER")
@@ -72,15 +101,76 @@ def init_db():
 
 
 def log_sent(number, text, success, attempts, detail, api_key_id=None, source=None):
+    """Registra l'invio senza il testo (il parametro text resta per compatibilita' e non si salva) e con il numero
+    mascherato; se l'invio e' riuscito, ricorda la chiave che ha scritto a quel numero."""
     conn = db()
     conn.execute(
         "INSERT INTO sent (number, text, success, attempts, detail, api_key_id, source) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (number, text, 1 if success else 0, attempts, detail, api_key_id, source),
+        (mask_number(number), "", 1 if success else 0, attempts, detail, api_key_id, source),
     )
     _rotate(conn, "sent")
+    if success and api_key_id is not None and number_key(number):
+        conn.execute(
+            "INSERT INTO last_sender (number_key, api_key_id, at) VALUES (?, ?, datetime('now', 'localtime')) "
+            "ON CONFLICT(number_key) DO UPDATE SET api_key_id = excluded.api_key_id, at = excluded.at",
+            (number_key(number), api_key_id),
+        )
     conn.commit()
     conn.close()
+
+
+def prune():
+    """Cancella i ricevuti mai confermati oltre RECEIVED_MAX_DAYS e i destinatari ricordati oltre LAST_SENDER_DAYS."""
+    conn = db()
+    conn.execute("DELETE FROM received WHERE imported_at < datetime('now', 'localtime', ?)", (f"-{RECEIVED_MAX_DAYS} days",))
+    conn.execute("DELETE FROM last_sender WHERE at < datetime('now', 'localtime', ?)", (f"-{LAST_SENDER_DAYS} days",))
+    conn.commit()
+    conn.close()
+
+
+def _owner(conn, number):
+    row = conn.execute(
+        "SELECT api_key_id FROM last_sender WHERE number_key = ? AND at >= datetime('now', 'localtime', ?)",
+        (number_key(number), f"-{LAST_SENDER_DAYS} days"),
+    ).fetchone()
+    return row["api_key_id"] if row else None
+
+
+def received_for(api_key_id=None, default_inbox=False, limit=200):
+    """Risposte da consegnare: quelle dei numeri a cui questa chiave ha scritto per ultima e, per la chiave
+    predefinita (default_inbox), quelle dei numeri a cui non ha scritto nessuno. api_key_id None = dashboard: tutte."""
+    prune()
+    conn = db()
+    rows = conn.execute(
+        "SELECT id, number, text, sms_timestamp, imported_at FROM received ORDER BY id LIMIT 2000").fetchall()
+    out = []
+    for r in rows:
+        if api_key_id is not None:
+            owner = _owner(conn, r["number"])
+            if not (owner == api_key_id or (owner is None and default_inbox)):
+                continue
+        out.append(dict(r))
+        if len(out) >= limit:
+            break
+    conn.close()
+    return out
+
+
+def ack_received(ids, api_key_id=None, default_inbox=False):
+    """Conferma (e cancella) le risposte lette: solo quelle che spettano a questa chiave."""
+    wanted = {int(i) for i in ids if str(i).isdigit()}
+    if not wanted:
+        return 0
+    mine = {r["id"] for r in received_for(api_key_id, default_inbox, limit=2000)}
+    ids_ok = sorted(wanted & mine)
+    if not ids_ok:
+        return 0
+    conn = db()
+    conn.execute(f"DELETE FROM received WHERE id IN ({','.join('?' * len(ids_ok))})", ids_ok)
+    conn.commit()
+    conn.close()
+    return len(ids_ok)
 
 
 def count_sent_last_hour(api_key_id):
