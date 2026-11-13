@@ -212,6 +212,20 @@ class GatewayAuthTest(unittest.TestCase):
         self.assertEqual(self.client.post(f"/api/keys/{kid}", json={"allowed_ips": "", "max_per_hour": 5}).status_code, 200)
         self.assertEqual(self.send_with(key, environ_base={"REMOTE_ADDR": "203.0.113.9"}).status_code, 200)
 
+    def test_modifica_permessi(self):
+        key = auth.create_key("gestionale", scopes="send")
+        kid = [k for k in auth.list_keys() if k["name"] == "gestionale"][0]["id"]
+        headers = {"Authorization": f"Bearer {key}"}
+        self.assertEqual(self.client.get("/api/history/received", headers=headers).status_code, 403)
+        self.client.post("/login", data={"username": "admin", "password": "password-di-prova"})
+        self.assertEqual(self.client.post(f"/api/keys/{kid}", json={"scopes": "send,read"}).status_code, 200)
+        self.assertEqual(self.client.post(f"/api/keys/{kid}", json={"scopes": "scrivi"}).status_code, 400)
+        self.client.post("/logout")
+        self.assertEqual(self.client.get("/api/history/received", headers=headers).status_code, 200)
+        self.assertEqual(self.send_with(key).status_code, 200)
+        self.assertTrue(auth.update_key(name="gestionale", scopes="read"))
+        self.assertEqual(self.send_with(key).status_code, 403)
+
     def test_aggiornamento_db_vecchio(self):
         conn = db()
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(sent)")}

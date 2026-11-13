@@ -421,6 +421,7 @@ def api_keys_update(key_id):
             key_id=key_id,
             allowed_ips=data.get("allowed_ips"),
             max_per_hour=data.get("max_per_hour"),
+            scopes=data.get("scopes"),
         )
     except (ValueError, TypeError) as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
@@ -454,10 +455,11 @@ def cli(argv):
     keys.add_parser("list", help="elenca le chiavi")
     revoke = keys.add_parser("revoke", help="revoca una chiave")
     revoke.add_argument("name")
-    update = keys.add_parser("update", help="cambia IP ammessi e/o limite orario di una chiave")
+    update = keys.add_parser("update", help="cambia IP ammessi, limite orario e/o permessi di una chiave")
     update.add_argument("name")
     update.add_argument("--ips", default=None, help="nuovi IP/reti ammessi; stringa vuota = tutti")
     update.add_argument("--max-per-hour", type=int, default=None)
+    update.add_argument("--scopes", default=None, help="send, read o send,read")
 
     args = parser.parse_args(argv)
     init_db()
@@ -478,7 +480,7 @@ def cli(argv):
                       f"ultimo uso: {k['last_used_at'] or '-'} da {k['last_used_ip'] or '-'}  {stato}")
         elif args.action == "update":
             try:
-                if not auth.update_key(name=args.name, allowed_ips=args.ips, max_per_hour=args.max_per_hour):
+                if not auth.update_key(name=args.name, allowed_ips=args.ips, max_per_hour=args.max_per_hour, scopes=args.scopes):
                     print("Chiave non trovata o revocata", file=sys.stderr)
                     return 1
             except ValueError as exc:

@@ -65,6 +65,7 @@ docker exec sms-gateway python3 /app/app.py keys revoke foldable-service
 
 # cambiare IP ammessi e/o limite orario di una chiave esistente
 docker exec sms-gateway python3 /app/app.py keys update foldable-service --ips 192.168.1.7 --max-per-hour 50
+docker exec sms-gateway python3 /app/app.py keys update gestionale --scopes send,read   # permessi: send, read o send,read
 ```
 
 Aggiungi `--scopes send,read` solo per chi deve leggere anche stato e storico.

@@ -114,9 +114,12 @@ def revoke_key(key_id=None, name=None):
     return cur.rowcount > 0
 
 
-def update_key(key_id=None, name=None, allowed_ips=None, max_per_hour=None):
-    """Cambia IP ammessi e/o limite orario di una chiave attiva."""
+def update_key(key_id=None, name=None, allowed_ips=None, max_per_hour=None, scopes=None):
+    """Cambia IP ammessi, limite orario e/o permessi (send, read) di una chiave attiva."""
     fields, values = [], []
+    if scopes is not None:
+        fields.append("scopes = ?")
+        values.append(parse_scopes(scopes))
     if allowed_ips is not None:
         fields.append("allowed_ips = ?")
         values.append(parse_allowed_ips(allowed_ips))

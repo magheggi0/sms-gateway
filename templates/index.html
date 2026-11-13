@@ -429,10 +429,12 @@ async function editKey(id) {
   if (ips === null) return;
   const max = prompt('SMS massimi all\'ora:', k.max_per_hour);
   if (max === null) return;
+  const scopes = prompt('Permessi: send (invio), read (lettura delle risposte) o send,read:', k.scopes || 'send');
+  if (scopes === null) return;
   const r = await api('/api/keys/' + id, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({allowed_ips: ips, max_per_hour: parseInt(max, 10)})
+    body: JSON.stringify({allowed_ips: ips, max_per_hour: parseInt(max, 10), scopes: scopes})
   });
   const d = await r.json();
   if (!d.success) alert('Errore: ' + d.error);
