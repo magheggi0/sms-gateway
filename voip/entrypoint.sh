@@ -49,6 +49,11 @@ find_alsa() {
     return 1
 }
 
+# --- il nome del server deve risolversi (rete dell'host, /etc/hosts del container) ---
+if ! getent hosts "$(hostname)" >/dev/null 2>&1; then
+    echo "127.0.1.1 $(hostname)" >> /etc/hosts
+fi
+
 # --- configurazione di Asterisk ---
 mkdir -p /etc/asterisk /var/lib/asterisk /var/spool/asterisk /var/run/asterisk /var/log/asterisk
 

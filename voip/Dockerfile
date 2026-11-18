@@ -29,8 +29,13 @@ RUN curl -fsSL "https://github.com/asterisk/asterisk/archive/refs/tags/${ASTERIS
 # chan_quectel. Gli SMS restano al gateway SMS (ModemManager): all'avvio il modulo
 # cambierebbe la memoria degli SMS (AT+CPMS) e le notifiche (AT+CNMI) del modem;
 # li sostituiamo con un semplice AT, che risponde OK, cosi' l'inizializzazione prosegue.
+# Con il VoLTE la fine chiamata arriva solo come NO CARRIER: patches/no_carrier.inc la chiude.
+COPY patches/no_carrier.inc /usr/src/no_carrier.inc
 RUN git clone -q "${CHAN_QUECTEL_REPO}" chan_quectel \
     && cd chan_quectel && git checkout -q "${CHAN_QUECTEL_COMMIT}" \
+    && test "$(grep -c 'Receive NO CARRIER' at_response.c)" = 1 \
+    && sed -i '/Receive NO CARRIER/r /usr/src/no_carrier.inc' at_response.c \
+    && grep -q "NO CARRIER chiude le chiamate" at_response.c \
     && sed -i 's|"AT+CPMS=\\"SM\\",\\"SM\\",\\"SM\\"\\r"|"AT\\r"|; s|"AT+CNMI=2,1,0,2,0\\r"|"AT\\r"|' at_command.c \
     && ! grep -q 'AT+CPMS=\\"SM\|AT+CNMI=2,1,0,2,0' at_command.c \
     && ./bootstrap >/dev/null \
