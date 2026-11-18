@@ -88,7 +88,11 @@ EOF
     USB_DEV=$(dirname "$USB_SYSPATH" 2>/dev/null || true)
     VENDOR=$(cat "$USB_DEV/idVendor" 2>/dev/null || true)
     RESERVED=" ${MM_RESERVED_IFACES:-} "
+    # Solo per i Quectel (vendor 2c7c): con gli altri modem (es. Huawei MBIM
+    # del TrueNAS) l'avvio resta com'era, senza toccare le ttyUSB.
+    [ "$VENDOR" = "2c7c" ] || echo "[entrypoint] modem non Quectel (vendor ${VENDOR:-?}): porte ttyUSB lasciate come prima"
     for tty in /sys/class/tty/ttyUSB*; do
+        [ "$VENDOR" = "2c7c" ] || break
         [ -e "$tty" ] || continue
         name=$(basename "$tty")
         intf=$(readlink -f "$tty/device/.." 2>/dev/null || true)
@@ -102,7 +106,6 @@ EOF
             case "$RESERVED" in
                 *" $num "*) echo "E:ID_MM_PORT_IGNORE=1"; role="riservata ad altro programma" ;;
                 *)
-                    if [ "$VENDOR" = "2c7c" ]; then
                         case "$num" in
                             00|01) echo "E:ID_MM_PORT_IGNORE=1"; role="ignorata (diagnostica/GPS)" ;;
                             02) echo "E:ID_MM_PORT_TYPE_AT_PRIMARY=1"; role="AT principale" ;;
@@ -111,8 +114,7 @@ EOF
                                     *" 02 "*) echo "E:ID_MM_PORT_TYPE_AT_PRIMARY=1"; role="AT principale (02 riservata)" ;;
                                     *) echo "E:ID_MM_PORT_TYPE_AT_SECONDARY=1"; role="AT secondaria" ;;
                                 esac ;;
-                        esac
-                    fi ;;
+                        esac ;;
             esac
             echo "G:seat"
         } > "/run/udev/data/c${devnum}"
