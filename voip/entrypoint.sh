@@ -189,7 +189,9 @@ group = 0
 rxgain = 0
 txgain = 0
 autodeletesms = no
-resetquectel = no
+; nonostante il nome, con yes chan_quectel manda AT^DSCI=1 (avvisi sullo stato
+; della chiamata: risposta, attiva, chiusa), non un reset: senza, niente audio
+resetquectel = yes
 u2diag = -1
 usecallingpres = yes
 callingpres = allowed_passed_screen
