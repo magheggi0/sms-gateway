@@ -76,6 +76,7 @@ La prima costruzione compila Asterisk: richiede diversi minuti.
 | `AUDIO_MODE`     | `uac`       | Voce sull'audio USB del modem (`uac`) o sulla porta seriale USB (`serial`, interfaccia `AUDIO_IFACE`) |
 | `AUDIO_IFACE`    | `01`        | Interfaccia USB della voce in modalità `serial` (sul Quectel la porta NMEA/GPS) |
 | `ALSADEV`        | trovata     | Scheda audio del modem in modalità `uac`, es. `plughw:CARD=EG25GC,DEV=0` |
+| `JB_SIZE`        | `200`       | Buffer di compensazione dell'audio verso il modem, in ms (`0` = spento): senza, voce a singhiozzi |
 | `WATCH_INTERVAL` | `15`        | Secondi tra un controllo del modem e l'altro |
 
 ## Centralino (Yeastar serie P)

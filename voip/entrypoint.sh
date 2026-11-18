@@ -15,6 +15,7 @@ AUDIO_MODE=${AUDIO_MODE:-uac}           # voce: "uac" (audio USB) o "serial" (po
 AUDIO_IFACE=${AUDIO_IFACE:-01}          # interfaccia USB della voce in modalita' serial
 ALSADEV=${ALSADEV:-}                    # scheda audio del modem (vuoto = trovata da sola)
 WATCH_INTERVAL=${WATCH_INTERVAL:-15}
+JB_SIZE=${JB_SIZE:-200}                 # buffer di compensazione verso il modem in ms (0 = spento)
 
 if ! [[ "$YEASTAR_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
     log "ERRORE: YEASTAR_IP mancante o non valido (es. 192.168.1.5)"
@@ -24,6 +25,7 @@ case "$AUDIO_MODE" in uac|serial) ;; *) log "ERRORE: AUDIO_MODE deve essere uac 
 for v in YEASTAR_PORT SIP_PORT RTP_START RTP_END; do
     [[ "${!v}" =~ ^[0-9]{2,5}$ ]] || { log "ERRORE: $v non valido"; exit 1; }
 done
+[[ "$JB_SIZE" =~ ^[0-9]{1,4}$ ]] || { log "ERRORE: JB_SIZE non valido (millisecondi)"; exit 1; }
 [[ "$GSM_DID" =~ ^[+0-9A-Za-z_-]{1,32}$ ]] || { log "ERRORE: GSM_DID non valido"; exit 1; }
 
 # --- porte e scheda audio del modem Quectel (vendor 2c7c) ---
@@ -193,6 +195,13 @@ write_quectel() {
 interval = 15
 smsdb = /var/lib/asterisk/smsdb
 csmsttl = 600
+EOF
+    # Buffer di compensazione: l'audio dal centralino arriva in pacchetti di rete
+    # irregolari, il modem vuole un flusso regolare ogni 20 ms (senza: voce a singhiozzi)
+    if [ "$JB_SIZE" -gt 0 ]; then
+        printf 'jbenable = yes\njbforce = yes\njbimpl = fixed\njbmaxsize = %s\njbresyncthreshold = 1000\n' "$JB_SIZE" >> /etc/asterisk/quectel.conf
+    fi
+    cat >> /etc/asterisk/quectel.conf << EOF
 
 [defaults]
 context = from-gsm
