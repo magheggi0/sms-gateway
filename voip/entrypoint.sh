@@ -88,7 +88,8 @@ EOF
 cat > /etc/asterisk/logger.conf << 'EOF'
 [general]
 [logfiles]
-console => notice,warning,error,verbose
+; debug compare solo se acceso a mano (core set debug N chan_quectel.so)
+console => notice,warning,error,verbose,debug
 EOF
 
 cat > /etc/asterisk/rtp.conf << EOF
@@ -146,9 +147,14 @@ cat > /etc/asterisk/extensions.conf << EOF
 static = yes
 writeprotect = yes
 
-; chiamate in arrivo sulla SIM -> centralino (numero chiamato = GSM_DID)
+; chiamate in arrivo sulla SIM -> centralino (numero chiamato = GSM_DID).
+; chan_quectel usa come interno il numero della SIM letto dal modem (AT+CNUM),
+; oppure "s" se il modem non lo conosce: tutti vanno allo stesso posto.
 [from-gsm]
-exten => s,1,NoOp(GSM in arrivo da \${CALLERID(num)})
+exten => s,1,Goto(entrata,1)
+exten => _X.,1,Goto(entrata,1)
+exten => _+X.,1,Goto(entrata,1)
+exten => entrata,1,NoOp(GSM in arrivo da \${CALLERID(num)})
  same => n,Dial(PJSIP/${GSM_DID}@yeastar,180)
  same => n,Hangup()
 ; SMS e USSD restano al gateway SMS
