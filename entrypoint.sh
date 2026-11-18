@@ -169,6 +169,10 @@ enable_modem() {
     while [ "$waited" -lt 60 ]; do
         case "$state" in initializing|unknown|"") ;; *) break ;; esac
         sleep 3; waited=$((waited + 3))
+        if ! mmcli -L 2>/dev/null | grep -q "${modem}\b"; then
+            log "modem sparito durante l'inizializzazione (riavviato o scollegato)"
+            return 1
+        fi
         state=$(modem_state "$modem")
     done
     case "$state" in
@@ -199,7 +203,9 @@ else
 fi
 stop_mm
 start_mm
-[ -n "$SIG" ] && enable_modem
+# attivazione in parallelo: il controllo continuo parte subito, anche se il
+# modem si riavvia mentre si aspetta la prima attivazione
+if [ -n "$SIG" ]; then enable_modem & fi
 
 # --- controllo continuo: riavvio del modem, ricollegamento USB, ModemManager fermo ---
 watchdog() {
