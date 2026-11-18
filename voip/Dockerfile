@@ -23,7 +23,7 @@ RUN curl -fsSL "https://github.com/asterisk/asterisk/archive/refs/tags/${ASTERIS
     && make menuselect.makeopts >/dev/null \
     && menuselect/menuselect --disable BUILD_NATIVE menuselect.makeopts \
     && make -j"$(nproc)" >/dev/null \
-    && make install >/dev/null \
+    && make install >/dev/null && make install-headers >/dev/null \
     && cd .. && rm -rf "asterisk-${ASTERISK_VERSION}"
 
 # chan_quectel. Gli SMS restano al gateway SMS (ModemManager): all'avvio il modulo
