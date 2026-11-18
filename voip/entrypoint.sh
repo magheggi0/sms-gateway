@@ -11,6 +11,8 @@ RTP_START=${RTP_START:-16000}           # porte della voce (RTP)
 RTP_END=${RTP_END:-16100}
 GSM_DID=${GSM_DID:-gsm}                 # numero chiamato inviato al centralino per le entranti
 AT_IFACE=${AT_IFACE:-02}                # interfaccia USB AT del modem lasciata alla voce
+AUDIO_MODE=${AUDIO_MODE:-uac}           # voce: "uac" (audio USB) o "serial" (porta seriale USB)
+AUDIO_IFACE=${AUDIO_IFACE:-01}          # interfaccia USB della voce in modalita' serial
 ALSADEV=${ALSADEV:-}                    # scheda audio del modem (vuoto = trovata da sola)
 WATCH_INTERVAL=${WATCH_INTERVAL:-15}
 
@@ -18,19 +20,21 @@ if ! [[ "$YEASTAR_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
     log "ERRORE: YEASTAR_IP mancante o non valido (es. 192.168.1.5)"
     exit 1
 fi
+case "$AUDIO_MODE" in uac|serial) ;; *) log "ERRORE: AUDIO_MODE deve essere uac o serial"; exit 1 ;; esac
 for v in YEASTAR_PORT SIP_PORT RTP_START RTP_END; do
     [[ "${!v}" =~ ^[0-9]{2,5}$ ]] || { log "ERRORE: $v non valido"; exit 1; }
 done
 [[ "$GSM_DID" =~ ^[+0-9A-Za-z_-]{1,32}$ ]] || { log "ERRORE: GSM_DID non valido"; exit 1; }
 
-# --- porta AT e scheda audio del modem Quectel (vendor 2c7c) ---
-find_at_port() {
+# --- porte e scheda audio del modem Quectel (vendor 2c7c) ---
+# find_port <interfaccia USB>: la ttyUSB del modem su quell'interfaccia
+find_port() {
     local tty intf
     for tty in /sys/class/tty/ttyUSB*; do
         [ -e "$tty" ] || continue
         intf=$(readlink -f "$tty/device/.." 2>/dev/null) || continue
         [ "$(cat "$(dirname "$intf")/idVendor" 2>/dev/null)" = "2c7c" ] || continue
-        [ "$(cat "$intf/bInterfaceNumber" 2>/dev/null)" = "$AT_IFACE" ] || continue
+        [ "$(cat "$intf/bInterfaceNumber" 2>/dev/null)" = "$1" ] || continue
         echo "/dev/$(basename "$tty")"
         return 0
     done
@@ -43,10 +47,17 @@ find_alsa() {
     for c in /proc/asound/card[0-9]*; do
         [ -e "$c/usbid" ] || continue
         case "$(cat "$c/usbid")" in
-            2c7c:*) echo "hw:CARD=$(cat "$c/id"),DEV=0"; return 0 ;;
+            # plughw: converte formato e frequenza (con hw la scheda rifiutava l'audio)
+            2c7c:*) echo "plughw:CARD=$(cat "$c/id"),DEV=0"; return 0 ;;
         esac
     done
     return 1
+}
+
+find_at_port() { find_port "$AT_IFACE"; }
+# voce: scheda audio (uac) o porta seriale (serial)
+find_audio() {
+    if [ "$AUDIO_MODE" = "serial" ]; then find_port "$AUDIO_IFACE"; else find_alsa; fi
 }
 
 # --- il nome del server deve risolversi (rete dell'host, /etc/hosts del container) ---
@@ -205,31 +216,41 @@ dtmf = relax
 
 [gsm0]
 data = $1
-quec_uac = 1
-alsadev = $2
 EOF
+    if [ "$AUDIO_MODE" = "serial" ]; then
+        echo "audio = $2" >> /etc/asterisk/quectel.conf
+    else
+        printf 'quec_uac = 1\nalsadev = %s\n' "$2" >> /etc/asterisk/quectel.conf
+    fi
 }
 
 AT_PORT=$(find_at_port || true)
-ALSA=$(find_alsa || true)
+AUDIO=$(find_audio || true)
 [ -n "$AT_PORT" ] || log "WARNING: porta AT del modem (interfaccia ${AT_IFACE}) non trovata: verra' cercata di nuovo"
-[ -n "$ALSA" ] || log "WARNING: scheda audio USB del modem non trovata: va attivata l'audio USB (UAC) del modem, vedi README"
-write_quectel "${AT_PORT:-/dev/ttyUSB-assente}" "${ALSA:-hw:CARD=Android,DEV=0}"
+if [ -z "$AUDIO" ]; then
+    if [ "$AUDIO_MODE" = "serial" ]; then
+        log "WARNING: porta della voce (interfaccia ${AUDIO_IFACE}) non trovata"
+    else
+        log "WARNING: scheda audio USB del modem non trovata: va attivata l'audio USB (UAC) del modem, vedi README"
+    fi
+fi
+write_quectel "${AT_PORT:-/dev/ttyUSB-assente}" "${AUDIO:-/dev/assente}"
 log "centralino ${YEASTAR_IP}:${YEASTAR_PORT}, SIP su ${SIP_PORT}, RTP ${RTP_START}-${RTP_END}"
-log "modem: AT ${AT_PORT:-?}, audio ${ALSA:-?}"
+log "modem: AT ${AT_PORT:-?}, voce ${AUDIO_MODE} ${AUDIO:-?}"
 
 # --- controllo continuo: se il modem si riavvia le porte cambiano nome ---
+# "quectel reload" non rilegge bene le impostazioni del modem (porta voce, audio USB):
+# se le porte cambiano, Asterisk si ferma e Docker riavvia il container da capo.
 watchdog() {
-    local cur_at=$AT_PORT cur_alsa=$ALSA at alsa
+    local at audio
     while sleep "$WATCH_INTERVAL"; do
         at=$(find_at_port || true)
-        alsa=$(find_alsa || true)
-        [ -n "$at" ] || continue
-        if [ "$at" != "$cur_at" ] || { [ -n "$alsa" ] && [ "$alsa" != "$cur_alsa" ]; }; then
-            log "modem cambiato: AT ${at}, audio ${alsa:-?}: ricarico chan_quectel"
-            write_quectel "$at" "${alsa:-${cur_alsa:-hw:CARD=Android,DEV=0}}"
-            cur_at=$at; [ -n "$alsa" ] && cur_alsa=$alsa
-            asterisk -rx "quectel reload now" >/dev/null 2>&1 || true
+        audio=$(find_audio || true)
+        [ -n "$at" ] && [ -n "$audio" ] || continue
+        if [ "$at" != "$AT_PORT" ] || [ "$audio" != "$AUDIO" ]; then
+            log "modem cambiato: AT ${at}, voce ${audio}: riavvio il ponte"
+            asterisk -rx "core stop now" >/dev/null 2>&1 || kill 1
+            return
         fi
     done
 }

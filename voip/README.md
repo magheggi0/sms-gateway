@@ -35,6 +35,15 @@ SIM ── modem Quectel ──┬── ModemManager → sms-gateway (SMS, inte
 3. Nel **gateway SMS**: `MM_RESERVED_IFACES=02`, così ModemManager lascia l'interfaccia 02 alla voce
    e usa la 03.
 
+### Voce sulla porta seriale (`AUDIO_MODE=serial`)
+
+In alternativa all'audio USB la voce passa sull'interfaccia 01 del modem (`AT+QPCMV=1,0`, lo manda
+`chan_quectel` a ogni chiamata). Quella porta di solito trasmette il GPS (NMEA): va zittita una volta,
+`AT+QGPSCFG="outport","none"` (resta salvato). Il gateway SMS la ignora già.
+
+**Volume in ingresso**: con il firmware 30.200 la voce del chiamante arriva quasi muta; `AT+QRXGAIN=16384`
+(predefinito 8192) e `AT+CLVL=5` la portano a un livello normale.
+
 ## Compose (Dockge)
 
 ```yaml
@@ -64,7 +73,9 @@ La prima costruzione compila Asterisk: richiede diversi minuti.
 | `RTP_START`/`RTP_END` | `16000`/`16100` | Porte della voce |
 | `GSM_DID`        | `gsm`       | Numero chiamato inviato al centralino per le chiamate entranti (per l'instradamento in entrata) |
 | `AT_IFACE`       | `02`        | Interfaccia USB AT del modem usata per la voce (deve essere in `MM_RESERVED_IFACES` del gateway SMS) |
-| `ALSADEV`        | trovata     | Scheda audio del modem, es. `hw:CARD=Android,DEV=0` |
+| `AUDIO_MODE`     | `uac`       | Voce sull'audio USB del modem (`uac`) o sulla porta seriale USB (`serial`, interfaccia `AUDIO_IFACE`) |
+| `AUDIO_IFACE`    | `01`        | Interfaccia USB della voce in modalità `serial` (sul Quectel la porta NMEA/GPS) |
+| `ALSADEV`        | trovata     | Scheda audio del modem in modalità `uac`, es. `plughw:CARD=EG25GC,DEV=0` |
 | `WATCH_INTERVAL` | `15`        | Secondi tra un controllo del modem e l'altro |
 
 ## Centralino (Yeastar serie P)
