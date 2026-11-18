@@ -147,3 +147,9 @@ python3 -m unittest discover -s tests
 - **Conferma**: l'applicazione salva le risposte nel suo database e chiama `POST /api/history/received/ack` con gli id:
   il gateway le cancella (può confermare solo le sue). Quelle mai confermate si cancellano dopo `RECEIVED_MAX_DAYS`.
 - Chi legge le risposte ha bisogno di una chiave con il permesso `read` (oltre a `send`).
+
+## Voce (trunk VoIP)
+
+La cartella [`voip/`](voip/README.md) contiene un container separato che usa lo stesso modem Quectel come
+linea del centralino (Asterisk + `chan_quectel`, trunk SIP verso il Yeastar). Gli SMS restano a questo
+gateway: nel suo compose va `MM_RESERVED_IFACES=02`.
