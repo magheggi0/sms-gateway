@@ -45,6 +45,10 @@ docker run -d --name sms-gateway --restart unless-stopped \
 | `LAST_SENDER_DAYS`      | `60`        | Per quanti giorni si ricorda quale chiave ha scritto a un numero (per consegnarle le risposte) |
 | `INBOX_DEFAULT_KEYS`    | (vuoto)     | Nomi delle chiavi (separati da virgola) che ricevono anche le risposte dei numeri a cui non ha scritto nessuno (es. `gestionale`) |
 | `HISTORY_MAX`           | `20000`     | Righe massime di storico inviati e ricevuti (poi si cancellano le più vecchie; 0 = nessun limite) |
+| `MM_WATCHDOG`           | `1`         | Controllo continuo del modem: se si riavvia, viene ricollegato o ModemManager si ferma, riconfigura le porte e riavvia ModemManager da solo (`0` = spento) |
+| `MM_WATCH_INTERVAL`     | `15`        | Secondi tra un controllo e l'altro                               |
+| `MM_DEBUG`              | `0`         | `1` = ModemManager in modalità debug: permette `mmcli -m any --command='AT…'` (log molto lungo, solo per diagnosi) |
+| `MM_RESERVED_IFACES`    | (vuoto)     | Solo Quectel: interfacce USB lasciate a un altro programma (es. `02` al centralino per la voce; la `03` diventa la porta AT principale) |
 
 Per non scrivere la password in chiaro:
 
