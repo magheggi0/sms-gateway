@@ -77,6 +77,47 @@ EOF
     else
         echo "[entrypoint] WARNING: nessuna interfaccia WWAN trovata dopo ${WWAN_WAIT}s"
     fi
+
+    # --- porte seriali (ttyUSB) dello stesso modem USB ---
+    # Senza udev ModemManager non le vede: i modem QMI come il Quectel EC25
+    # hanno bisogno di almeno una porta AT ("No AT port available").
+    # Ruoli come nelle regole ufficiali di ModemManager (77-mm-quectel-port-types):
+    # interfaccia 00 = diagnostica, 01 = GPS (ignorate), 02 = AT principale, 03 = AT secondaria.
+    # MM_RESERVED_IFACES (es. "02") lascia quelle interfacce a un altro programma,
+    # per esempio il centralino che usa il modem per la voce.
+    USB_DEV=$(dirname "$USB_SYSPATH" 2>/dev/null || true)
+    VENDOR=$(cat "$USB_DEV/idVendor" 2>/dev/null || true)
+    RESERVED=" ${MM_RESERVED_IFACES:-} "
+    for tty in /sys/class/tty/ttyUSB*; do
+        [ -e "$tty" ] || continue
+        name=$(basename "$tty")
+        intf=$(readlink -f "$tty/device/.." 2>/dev/null || true)
+        [ -n "$intf" ] && [ "$(dirname "$intf")" = "$USB_DEV" ] || continue
+        num=$(cat "$intf/bInterfaceNumber" 2>/dev/null || true)
+        devnum=$(cat "$tty/dev" 2>/dev/null || true)
+        [ -n "$devnum" ] || continue
+        role="candidata"
+        {
+            echo "E:ID_MM_CANDIDATE=1"
+            case "$RESERVED" in
+                *" $num "*) echo "E:ID_MM_PORT_IGNORE=1"; role="riservata ad altro programma" ;;
+                *)
+                    if [ "$VENDOR" = "2c7c" ]; then
+                        case "$num" in
+                            00|01) echo "E:ID_MM_PORT_IGNORE=1"; role="ignorata (diagnostica/GPS)" ;;
+                            02) echo "E:ID_MM_PORT_TYPE_AT_PRIMARY=1"; role="AT principale" ;;
+                            03)
+                                case "$RESERVED" in
+                                    *" 02 "*) echo "E:ID_MM_PORT_TYPE_AT_PRIMARY=1"; role="AT principale (02 riservata)" ;;
+                                    *) echo "E:ID_MM_PORT_TYPE_AT_SECONDARY=1"; role="AT secondaria" ;;
+                                esac ;;
+                        esac
+                    fi ;;
+            esac
+            echo "G:seat"
+        } > "/run/udev/data/c${devnum}"
+        echo "[entrypoint] ${name} (interfaccia ${num}, ${devnum}): ${role}"
+    done
 fi
 
 echo "[entrypoint] avvio ModemManager..."
