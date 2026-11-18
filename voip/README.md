@@ -35,9 +35,9 @@ SIM ── modem Quectel ──┬── ModemManager → sms-gateway (SMS, inte
 3. Nel **gateway SMS**: `MM_RESERVED_IFACES=02`, così ModemManager lascia l'interfaccia 02 alla voce
    e usa la 03.
 
-### Voce sulla porta seriale (`AUDIO_MODE=serial`)
+### Voce sulla porta seriale (`AUDIO_MODE=serial`, predefinita)
 
-In alternativa all'audio USB la voce passa sull'interfaccia 01 del modem (`AT+QPCMV=1,0`, lo manda
+La voce passa sull'interfaccia 01 del modem (`AT+QPCMV=1,0`, lo manda
 `chan_quectel` a ogni chiamata). Quella porta di solito trasmette il GPS (NMEA): va zittita una volta,
 `AT+QGPSCFG="outport","none"` (resta salvato). Il gateway SMS la ignora già.
 
@@ -73,7 +73,7 @@ La prima costruzione compila Asterisk: richiede diversi minuti.
 | `RTP_START`/`RTP_END` | `16000`/`16100` | Porte della voce |
 | `GSM_DID`        | `gsm`       | Numero chiamato inviato al centralino per le chiamate entranti (per l'instradamento in entrata) |
 | `AT_IFACE`       | `02`        | Interfaccia USB AT del modem usata per la voce (deve essere in `MM_RESERVED_IFACES` del gateway SMS) |
-| `AUDIO_MODE`     | `uac`       | Voce sull'audio USB del modem (`uac`) o sulla porta seriale USB (`serial`, interfaccia `AUDIO_IFACE`) |
+| `AUDIO_MODE`     | `serial`    | Voce sulla porta seriale USB (`serial`, interfaccia `AUDIO_IFACE`) o sull'audio USB (`uac`). Con l'EG25-G 30.200 l'audio USB si inceppa: usare `serial` |
 | `AUDIO_IFACE`    | `01`        | Interfaccia USB della voce in modalità `serial` (sul Quectel la porta NMEA/GPS) |
 | `ALSADEV`        | trovata     | Scheda audio del modem in modalità `uac`, es. `plughw:CARD=EG25GC,DEV=0` |
 | `JB_SIZE`        | `200`       | Buffer di compensazione dell'audio verso il modem, in ms (`0` = spento): senza, voce a singhiozzi |

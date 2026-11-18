@@ -11,7 +11,7 @@ RTP_START=${RTP_START:-16000}           # porte della voce (RTP)
 RTP_END=${RTP_END:-16100}
 GSM_DID=${GSM_DID:-gsm}                 # numero chiamato inviato al centralino per le entranti
 AT_IFACE=${AT_IFACE:-02}                # interfaccia USB AT del modem lasciata alla voce
-AUDIO_MODE=${AUDIO_MODE:-uac}           # voce: "uac" (audio USB) o "serial" (porta seriale USB)
+AUDIO_MODE=${AUDIO_MODE:-serial}        # voce: "serial" (porta seriale USB) o "uac" (audio USB)
 AUDIO_IFACE=${AUDIO_IFACE:-01}          # interfaccia USB della voce in modalita' serial
 ALSADEV=${ALSADEV:-}                    # scheda audio del modem (vuoto = trovata da sola)
 WATCH_INTERVAL=${WATCH_INTERVAL:-15}
